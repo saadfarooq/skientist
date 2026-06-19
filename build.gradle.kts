@@ -23,8 +23,8 @@ jreleaser {
                     active.set(org.jreleaser.model.Active.ALWAYS)
                     url.set("https://central.sonatype.com/api/v1/publisher")
                     sign.set(false)
-                    username.set(providers.gradleProperty("mavenCentralUsername").orNull)
-                    password.set(providers.gradleProperty("mavenCentralPassword").orNull)
+                    username.set(providers.gradleProperty("mavencentralusername").orNull)
+                    password.set(providers.gradleProperty("mavencentralpassword").orNull)
                     stagingRepositories.add("skientist/build/staging-deploy")
                     stagingRepositories.add("skientist-ksp/build/staging-deploy")
                 }

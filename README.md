@@ -1,7 +1,7 @@
 # Skientist
 
 [![CI](https://github.com/saadfarooq/skientist/actions/workflows/ci.yml/badge.svg)](https://github.com/saadfarooq/skientist/actions/workflows/ci.yml)
-[![Maven Central](https://img.shields.io/maven-central/v/io.github.saadfarooq.skientist/skientist)](https://central.sonatype.com/artifact/io.github.saadfarooq.skientist/skientist)
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.saadfarooq/skientist)](https://central.sonatype.com/artifact/io.github.saadfarooq/skientist)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE.txt)
 
 A Kotlin library for carefully refactoring critical paths — run old and new code side-by-side in production, compare results, measure timing, and publish outcomes. Always returns the control value. The candidate is invisible to the user.
@@ -110,8 +110,8 @@ When the experiment proves out, swap the DI binding to `RoomUserRepository` — 
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("io.github.saadfarooq.skientist:skientist:0.1.0")
-    ksp("io.github.saadfarooq.skientist:skientist-ksp:0.1.0")
+    implementation("io.github.saadfarooq:skientist:0.1.0")
+    ksp("io.github.saadfarooq:skientist-ksp:0.1.0")
 }
 ```
 
