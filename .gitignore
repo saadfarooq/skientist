@@ -1,0 +1,22 @@
+# Gradle files
+.gradle/
+build/
+
+# IDE files
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Local configuration
+local.properties
+
+# Log files
+*.log
+
+# OS files
+.DS_Store
+
+# Captures and profiling
+/captures/
+*.hprof
