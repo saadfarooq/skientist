@@ -12,6 +12,7 @@ import com.google.devtools.ksp.symbol.KSFunctionDeclaration
 import com.google.devtools.ksp.symbol.KSType
 import com.google.devtools.ksp.symbol.KSValueArgument
 import com.google.devtools.ksp.symbol.Modifier
+import com.squareup.kotlinpoet.ClassName
 import com.squareup.kotlinpoet.FileSpec
 import com.squareup.kotlinpoet.FunSpec
 import com.squareup.kotlinpoet.KModifier
@@ -22,7 +23,6 @@ import com.squareup.kotlinpoet.TypeSpec
 import com.squareup.kotlinpoet.ksp.toTypeName
 import com.squareup.kotlinpoet.ksp.writeTo
 import io.github.saadfarooq.skientist.Experiment
-import kotlin.time.Duration
 
 class ExperimentProcessor(
     private val codeGenerator: CodeGenerator,
@@ -54,14 +54,14 @@ class ExperimentProcessor(
         val configTypeArg: KSValueArgument = args.first { arg ->
             arg.name?.asString() == "config"
         }
-        val configType: com.google.devtools.ksp.symbol.KSType =
-            configTypeArg.value as com.google.devtools.ksp.symbol.KSType
+        val configType: KSType = configTypeArg.value as KSType
 
         val interfaceSimple = interfaceDecl.simpleName.asString()
         val prefix = interfaceSimple.replaceFirstChar { it.lowercase() }
         val interfaceType = interfaceDecl.asType(emptyList())
         val packageName: String = interfaceDecl.packageName.asString()
         val proxyName = "Experimenting$interfaceSimple"
+        val sealedName = "${interfaceSimple}MethodResult"
 
         val methods: List<KSFunctionDeclaration> = interfaceDecl.declarations
             .filterIsInstance<KSFunctionDeclaration>()
@@ -77,13 +77,23 @@ class ExperimentProcessor(
         val controlName = "${prefix}Control"
         val candidateName = "${prefix}Candidate"
         val configName = "${prefix}Config"
+        val publishName = "${prefix}Publish"
 
+        val sealedTypeName: ClassName = ClassName(packageName, sealedName)
+        val publishLambdaType: com.squareup.kotlinpoet.TypeName =
+            ClassName("kotlin", "Function1").parameterizedBy(sealedTypeName, com.squareup.kotlinpoet.UNIT)
+
+        // 1. Generate sealed interface with per-method subtypes
+        generateSealedInterface(interfaceDecl, methods, sealedName, sealedTypeName)
+
+        // 2. Generate proxy
         val classBuilder = TypeSpec.classBuilder(proxyName)
             .addSuperinterface(interfaceTypeName)
             .primaryConstructor(
                 FunSpec.constructorBuilder()
                     .addParameter(controlName, interfaceTypeName)
                     .addParameter(candidateName, interfaceTypeName)
+                    .addParameter(publishName, publishLambdaType)
                     .build()
             )
             .addProperty(
@@ -101,11 +111,16 @@ class ExperimentProcessor(
                     .initializer("%T", configTypeName)
                     .build()
             )
+            .addProperty(
+                PropertySpec.builder(publishName, publishLambdaType, KModifier.PRIVATE)
+                    .initializer(publishName)
+                    .build()
+            )
 
         for (method in methods) {
             classBuilder.addFunction(
                 generateMethod(method, experimentName, windowSize, windowTimeoutMs,
-                    controlName, candidateName, configName)
+                    controlName, candidateName, configName, publishName, sealedTypeName, packageName)
             )
         }
 
@@ -117,6 +132,62 @@ class ExperimentProcessor(
             .writeTo(codeGenerator, Dependencies(false, interfaceDecl.containingFile!!))
     }
 
+    // ── Sealed interface generation ────────────────────
+
+    private fun generateSealedInterface(
+        interfaceDecl: KSClassDeclaration,
+        methods: List<KSFunctionDeclaration>,
+        sealedName: String,
+        sealedTypeName: ClassName,
+    ) {
+        val sealedBuilder = TypeSpec.interfaceBuilder(sealedName)
+            .addModifiers(KModifier.SEALED)
+
+        for (method in methods) {
+            val methodName = method.simpleName.asString()
+            val subtypeName = methodName.replaceFirstChar { it.uppercase() }
+            val returnType: KSType = method.returnType!!.resolve()
+            val isFlow = returnType.declaration.qualifiedName?.asString() == "kotlinx.coroutines.flow.Flow"
+            val innerTypeName = if (isFlow) {
+                val typeArgs = returnType.arguments
+                if (typeArgs.isNotEmpty()) typeArgs[0].type!!.resolve().toTypeName()
+                else com.squareup.kotlinpoet.STAR
+            } else returnType.toTypeName()
+
+            val resultType = if (isFlow) {
+                ClassName("io.github.saadfarooq.skientist", "FlowExperimentResult")
+                    .parameterizedBy(innerTypeName)
+            } else {
+                ClassName("io.github.saadfarooq.skientist", "ExperimentResult")
+                    .parameterizedBy(innerTypeName)
+            }
+
+            val subtype = TypeSpec.classBuilder(subtypeName)
+                .addSuperinterface(sealedTypeName)
+                .addModifiers(KModifier.DATA)
+                .primaryConstructor(
+                    FunSpec.constructorBuilder()
+                        .addParameter("result", resultType)
+                        .build()
+                )
+                .addProperty(
+                    PropertySpec.builder("result", resultType)
+                        .initializer("result")
+                        .build()
+                )
+                .build()
+
+            sealedBuilder.addType(subtype)
+        }
+
+        FileSpec.builder(interfaceDecl.packageName.asString(), sealedName)
+            .addType(sealedBuilder.build())
+            .build()
+            .writeTo(codeGenerator, Dependencies(false, interfaceDecl.containingFile!!))
+    }
+
+    // ── Method generation ──────────────────────────────
+
     private fun generateMethod(
         method: KSFunctionDeclaration,
         experimentName: String,
@@ -125,12 +196,14 @@ class ExperimentProcessor(
         controlName: String,
         candidateName: String,
         configName: String,
+        publishName: String,
+        sealedTypeName: ClassName,
+        packageName: String,
     ): FunSpec {
         val methodName: String = method.simpleName.asString()
         val returnType: KSType = method.returnType!!.resolve()
         val returnTypeName = returnType.toTypeName()
 
-        // Check if return type is Flow<T> — if so, extract inner type and use experimentFlow
         val isFlow = returnType.declaration.qualifiedName?.asString() == "kotlinx.coroutines.flow.Flow"
         val innerTypeName = if (isFlow) {
             val typeArgs = returnType.arguments
@@ -154,9 +227,10 @@ class ExperimentProcessor(
             funBuilder.addParameter(name, type)
         }
 
-        // ponytail: same template for both bounded and flow — only function name and window vary
         val experimentFunName = if (isFlow) "experimentFlow" else "experiment"
         val experimentFun = MemberName("io.github.saadfarooq.skientist", experimentFunName)
+        val subtypeSimpleName = methodName.replaceFirstChar { it.uppercase() }
+        val subtypeClass = ClassName(packageName, sealedTypeName.simpleName, subtypeSimpleName)
 
         @Suppress("MaxLineLength")
         if (isFlow) {
@@ -167,11 +241,13 @@ class ExperimentProcessor(
                 |  window(size = $windowSize, timeoutMs = $windowTimeoutMs)
                 |  enabled { ${configName}.enabled() }
                 |  compareWith { a, b -> ${configName}.compareWith(a, b) }
+                |  publish { ${publishName}(%T(it)) }
                 |  control { ${controlName}.%L(%L) }
                 |  candidate { ${candidateName}.%L(%L) }
                 |}
                 """.trimMargin(),
                 experimentFun, innerTypeName, experimentName, methodName,
+                subtypeClass,
                 methodName, paramNames,
                 methodName, paramNames,
             )
@@ -182,12 +258,13 @@ class ExperimentProcessor(
                 |  methodName(%S)
                 |  enabled { ${configName}.enabled() }
                 |  compareWith { a, b -> ${configName}.compareWith(a, b) }
-                |  publish { ${configName}.publish(it) }
+                |  publish { ${publishName}(%T(it)) }
                 |  control { ${controlName}.%L(%L) }
                 |  candidate { ${candidateName}.%L(%L) }
                 |}
                 """.trimMargin(),
                 experimentFun, innerTypeName, experimentName, methodName,
+                subtypeClass,
                 methodName, paramNames,
                 methodName, paramNames,
             )
@@ -195,5 +272,4 @@ class ExperimentProcessor(
 
         return funBuilder.build()
     }
-
 }

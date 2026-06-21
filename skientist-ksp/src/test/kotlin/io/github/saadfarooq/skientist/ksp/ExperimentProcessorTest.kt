@@ -46,7 +46,7 @@ class ExperimentProcessorTest {
                 import kotlinx.coroutines.runBlocking
 
                 fun main() {
-                    val proxy = ExperimentingTestRepository(ControlImpl(), CandidateImpl())
+                    val proxy = ExperimentingTestRepository(ControlImpl(), CandidateImpl()) { println(it) }
                     val result = runBlocking { proxy.fetch() }
                     println(result)
                 }
@@ -93,7 +93,7 @@ class ExperimentProcessorTest {
                 import kotlinx.coroutines.runBlocking
 
                 fun main() {
-                    val proxy = ExperimentingArgsRepository(ArgsControl(), ArgsCandidate())
+                    val proxy = ExperimentingArgsRepository(ArgsControl(), ArgsCandidate()) { }
                     val r = runBlocking { proxy.find("42", 10, "x") }
                     println(r)
                 }
@@ -141,7 +141,7 @@ class ExperimentProcessorTest {
                 import kotlinx.coroutines.runBlocking
 
                 fun main() {
-                    val proxy = ExperimentingMultiRepository(MultiControl(), MultiCandidate())
+                    val proxy = ExperimentingMultiRepository(MultiControl(), MultiCandidate()) { }
                     val r = runBlocking { proxy.getById("1") }
                     val l = runBlocking { proxy.getAll() }
                     println(r + l)
@@ -185,7 +185,7 @@ class ExperimentProcessorTest {
                 package test
 
                 fun main() {
-                    val proxy = ExperimentingSyncRepository(SyncControl(), SyncCandidate())
+                    val proxy = ExperimentingSyncRepository(SyncControl(), SyncCandidate()) { }
                     val r = proxy.getValue()
                     println(r)
                 }
@@ -234,7 +234,7 @@ class ExperimentProcessorTest {
                 import kotlinx.coroutines.runBlocking
 
                 fun main() {
-                    val proxy = ExperimentingCustomRepository(CustomControl(), CustomCandidate())
+                    val proxy = ExperimentingCustomRepository(CustomControl(), CustomCandidate()) { }
                     val r = runBlocking { proxy.fetch() }
                     println(r)
                 }
@@ -284,7 +284,7 @@ class ExperimentProcessorTest {
                 import kotlinx.coroutines.runBlocking
 
                 fun main() {
-                    val proxy = ExperimentingFlowRepository(FlowControl(), FlowCandidate())
+                    val proxy = ExperimentingFlowRepository(FlowControl(), FlowCandidate()) { }
                     val one = runBlocking { proxy.getOne() }
                     println(one)
                 }

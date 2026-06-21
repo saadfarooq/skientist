@@ -70,6 +70,19 @@ fun main() = runBlocking {
     val repo: UserRepository = ExperimentingUserRepository(
         userRepositoryControl = DatastoreUserRepository(),
         userRepositoryCandidate = RoomUserRepository(),
+        userRepositoryPublish = { methodResult ->
+            when (methodResult) {
+                is UserRepositoryMethodResult.GetUser ->
+                    println("[getUser] matched=${methodResult.result.matched} " +
+                            "ctrl=${methodResult.result.control.durationNs/1_000_000}ms")
+                is UserRepositoryMethodResult.GetAllUsers ->
+                    println("[getAllUsers] matched=${methodResult.result.matched} " +
+                            "ctrl=${methodResult.result.control.durationNs/1_000_000}ms")
+                is UserRepositoryMethodResult.ObserveUsers ->
+                    println("[observeUsers] matched=${methodResult.result.matched} " +
+                            "items=${methodResult.result.itemCount}")
+            }
+        },
     )
 
     val user = repo.getUser("42")
