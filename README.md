@@ -52,7 +52,7 @@ val userStream = experimentFlow<User>("user-stream")
 
 ### KSP Code Generation
 
-Mark your interface with `@Experiment`, the two implementations with `@Control` and `@Candidate`. KSP generates `ExperimentingUserRepository` — a proxy that delegates every method to `experiment()` or `experimentFlow()`.
+Mark your interface with `@Experiment`, the two implementations with `@Control` and `@Candidate`. KSP generates a type-safe sealed result hierarchy and a proxy that delegates each method to `experiment()` or `experimentFlow()`.
 
 ```kotlin
 @Experiment(name = "user-repo", config = UserRepoConfig::class)
@@ -74,17 +74,10 @@ class RoomUserRepository @Inject constructor(
 object UserRepoConfig : ExperimentConfigBlock<Any?> {
     override fun compareWith(a: Any?, b: Any?) = a == b
     override fun enabled() = remoteConfig.getBoolean("experiment_room")
-    override fun publish(result: ExperimentResult<*>) {
-        // result.methodName tells you which method produced this
-        when (result.methodName) {
-            "getUser" -> analytics.track("getUser_experiment", result)
-            "getAllUsers" -> analytics.track("getAllUsers_experiment", result)
-        }
-    }
 }
 ```
 
-Wire the generated proxy with your DI framework. The rest of your app sees only `UserRepository` — the experiment is invisible.
+Wire the generated proxy with your DI framework. The publish lambda gets compiler-enforced exhaustive `when` branches — every method is covered.
 
 ```kotlin
 // Hilt / Dagger
@@ -92,14 +85,26 @@ Wire the generated proxy with your DI framework. The rest of your app sees only 
 fun provideUserRepository(
     @Named("datastore") control: UserRepository,
     @Named("room") candidate: UserRepository,
-): UserRepository = ExperimentingUserRepository(control, candidate)
+): UserRepository = ExperimentingUserRepository(control, candidate) { result ->
+    when (result) {
+        is UserRepositoryMethodResult.GetUser ->
+            analytics.track("getUser", result.result)
+        is UserRepositoryMethodResult.GetAllUsers ->
+            analytics.track("getAllUsers", result.result)
+    }
+}
 
 // Koin
 single<UserRepository> {
     ExperimentingUserRepository(
         userRepositoryControl = get(named("datastore")),
         userRepositoryCandidate = get(named("room")),
-    )
+    ) { result ->
+        when (result) {
+            is UserRepositoryMethodResult.GetUser -> analytics.track("getUser", result.result)
+            is UserRepositoryMethodResult.GetAllUsers -> analytics.track("getAllUsers", result.result)
+        }
+    }
 }
 ```
 

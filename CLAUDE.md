@@ -81,6 +81,8 @@ experimentFlow<User>("user-stream")
 
 ### KSP code generation
 
+KSP generates a sealed `{Interface}MethodResult` per interface with type-safe subtypes per method. The proxy takes a `publish` lambda with compiler-enforced exhaustive `when`.
+
 ```kotlin
 @Experiment(name = "user-repo", config = UserRepoConfig::class)
 interface UserRepository {
@@ -91,12 +93,17 @@ interface UserRepository {
 object UserRepoConfig : ExperimentConfigBlock<Any?> {
     override fun compareWith(a: Any?, b: Any?) = a == b
     override fun enabled() = remoteConfig.getBoolean("experiment_room")
-    override fun publish(result: ExperimentResult<*>) = analytics.track(result)
 }
 
-// KSP generates: ExperimentingUserRepository(control, candidate)
-// — getUser() delegates to experiment()
-// — observeUsers() delegates to experimentFlow() with window()
+// KSP generates sealed interface + proxy with type-safe publish
+val repo = ExperimentingUserRepository(control, candidate) { result ->
+    when (result) {
+        is UserRepositoryMethodResult.GetUser ->
+            analytics.track("getUser", result.result)
+        is UserRepositoryMethodResult.ObserveUsers ->
+            analytics.track("observeUsers", result.result)
+    }
+}
 ```
 
 ## Design
